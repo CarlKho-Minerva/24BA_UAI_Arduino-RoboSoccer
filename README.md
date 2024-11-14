@@ -39,6 +39,8 @@ void loop() {
 
 While following the [dual-processing tutorial](https://docs.arduino.cc/tutorials/portenta-h7/dual-core-processing/) on Arduino, a bug was encountered. An issue has been raised with Arduino to address this: [Issue #42](https://github.com/arduino-libraries/Arduino_Pro_Tutorials/issues/42). It is hoped that this bug will be resolved for future users.
 
+![alt text](image.png)
+
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
