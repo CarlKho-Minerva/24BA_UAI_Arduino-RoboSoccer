@@ -75,6 +75,17 @@
   }
   ```
 
+### Commit 4: Phone Controlled LED
+- **Files Modified**: `SimpleWebServer.ino/SimpleWebServer.ino.ino`
+- **Description**: Added a web server example to control the red, green, and blue LEDs on the Portenta H7 using a phone.
+- **High-Level Flow**:
+  - Set up the Wi-Fi access point using the Portenta H7.
+  - Initialize the web server to listen on port 80.
+  - Create a web page with buttons to control the red, green, and blue LEDs.
+  - Handle HTTP GET requests to turn the LEDs on and off based on the button clicks.
+  - Update the LED states and provide visual feedback on the web page.
+
+
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
