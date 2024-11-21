@@ -1,3 +1,11 @@
+/*
+  This sketch reads a raw Stream of RGB565 pixels
+  from the Serial port and displays the frame on
+  the window.
+  Use with the Examples -> CameraCaptureRawBytes Arduino sketch.
+  This example code is in the public domain.
+*/
+
 import processing.serial.*;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -15,31 +23,41 @@ PImage myImage;
 byte[] frameBuffer = new byte[bytesPerFrame];
 int lastUpdate = 0;
 boolean shouldRedraw = false;
+int retryCount = 0;
+final int MAX_RETRIES = 3;
+final int TIMEOUT_MS = 1000; // Increased timeout
+byte[] frameMarkerBuffer = new byte[1];
 
 void setup() {
   size(640, 480);
 
-  // List all available serial ports
-  println(Serial.list());
+  // if you have only ONE serial port active
+  //myPort = new Serial(this, Serial.list()[0], 921600);          // if you have only ONE serial port active
 
-  // Update the serial port name to the correct one
-  myPort = new Serial(this, "/dev/cu.usbmodem1101", 921600); // Replace with the correct port name
+  // if you know the serial port name
+  //myPort = new Serial(this, "COM5", 921600);                    // Windows
+  //myPort = new Serial(this, "/dev/ttyACM0", 921600);            // Linux
+  myPort = new Serial(this, "/dev/cu.usbmodem1101", 921600);     // Mac
 
-  // wait for full frame of bytes
-  myPort.buffer(bytesPerFrame);
+  // Don't buffer the serial port
+  myPort.buffer(1);
 
-  myImage = createImage(cameraWidth, cameraHeight, RGB);
+  myImage = createImage(cameraWidth, cameraHeight, ALPHA);
 
   // Let the Arduino sketch know we're ready to receive data
   myPort.write(1);
 }
 
 void draw() {
-  // Time out after 1.5 seconds and ask for new data
-  if(millis() - lastUpdate > 1500) {
-    println("Connection timed out.");
-    myPort.clear();
-    myPort.write(1);
+  if (millis() - lastUpdate > TIMEOUT_MS) {
+    retryCount++;
+    if (retryCount > MAX_RETRIES) {
+      println("Connection lost - Retrying...");
+      myPort.clear();
+      myPort.write(1);
+      retryCount = 0;
+    }
+    lastUpdate = millis();
   }
 
   if(shouldRedraw){
@@ -52,36 +70,57 @@ void draw() {
 
 void serialEvent(Serial myPort) {
   lastUpdate = millis();
+  retryCount = 0;
 
-  // read the received bytes
-  myPort.readBytes(frameBuffer);
+  // Wait for enough data
+  int waitStart = millis();
+  while (myPort.available() < bytesPerFrame + 2) { // +2 for markers
+    if (millis() - waitStart > 500) {
+      println("Timeout waiting for data");
+      myPort.clear();
+      myPort.write(1);
+      return;
+    }
+  }
 
-  // Access raw bytes via byte buffer
+  // Look for start marker
+  int startByte = myPort.read();
+  if (startByte != 0xAA) {
+    println("Invalid start marker: " + startByte);
+    myPort.clear();
+    myPort.write(1);
+    return;
+  }
+
+  // Read exact number of bytes for the frame
+  int count = 0;
+  while (count < bytesPerFrame) {
+    if (myPort.available() > 0) {
+      frameBuffer[count++] = (byte)myPort.read();
+    }
+  }
+
+  // Read end marker
+  int endMarker = myPort.read();
+  if (endMarker != 0xFF) {
+    println("Invalid end marker: " + endMarker);
+    myPort.clear();
+    myPort.write(1);
+    return;
+  }
+
+  // Process frame
   ByteBuffer bb = ByteBuffer.wrap(frameBuffer);
-
-  /*
-    Ensure proper endianness of the data for > 8 bit values.
-    When using > 8bit values uncomment the following line and
-    adjust the translation to the pixel color.
-  */
-  //bb.order(ByteOrder.BIG_ENDIAN);
-
   int i = 0;
-
   while (bb.hasRemaining()) {
-    // read 8-bit pixel
     byte pixelValue = bb.get();
-
-    // set pixel color
     myImage.pixels[i++] = color(Byte.toUnsignedInt(pixelValue));
   }
 
   myImage.updatePixels();
-
-  // Ensures that the new image data is drawn in the next draw loop
   shouldRedraw = true;
 
-  // Let the Arduino sketch know we received all pixels
-  // and are ready for the next frame
+  // Clear any remaining data
+  myPort.clear();
   myPort.write(1);
 }

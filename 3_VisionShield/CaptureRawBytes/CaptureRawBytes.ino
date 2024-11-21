@@ -18,17 +18,11 @@ void setup()
 {
   Serial.begin(921600);
   // Init the cam QVGA, 30FPS
-  if (!cam.begin(CAMERA_R320x240, IMAGE_MODE, 60))
-  {
-    Serial.println("Failed to initialize camera");
-    while (1)
-      ; // Halt execution
-  }
+  cam.begin(CAMERA_R320x240, IMAGE_MODE, 30);
 }
 
 void loop()
 {
-  // put your main code here, to run repeatedly:
   if (!Serial)
   {
     Serial.begin(921600);
@@ -36,19 +30,51 @@ void loop()
       ;
   }
 
-  // Time out after 2 seconds and send new data
-  bool timeoutDetected = millis() - lastUpdate > 1000;
+  // Clear any stale data
+  while (Serial.available())
+  {
+    Serial.read();
+  }
 
-  // Wait until the receiver acknowledges
-  // that they are ready to receive new data
-  if (!timeoutDetected && Serial.read() != 1)
+  bool timeoutDetected = millis() - lastUpdate > 150;
+
+  // Read serial input and store it
+  int serialValue = Serial.read();
+
+  // Only proceed if we get a valid acknowledge or timeout
+  if (!timeoutDetected && serialValue != 1)
+  {
     return;
+  }
 
   lastUpdate = millis();
 
+  // Send frame start marker
+  Serial.write(0xAA);
+  Serial.flush(); // Ensure marker is sent
+
   // Grab frame and write to serial
-  if (cam.grabFrame(fb, 3000) == 0)
+  int grabResult = cam.grabFrame(fb, 3000);
+  if (grabResult == 0)
   {
-    Serial.write(fb.getBuffer(), cam.frameSize());
+    // Send frame data in chunks
+    const uint8_t *buffer = fb.getBuffer();
+    size_t remaining = cam.frameSize();
+    while (remaining > 0)
+    {
+      size_t chunk = min(64, remaining); // Send max 64 bytes at a time
+      Serial.write(buffer, chunk);
+      Serial.flush();
+      buffer += chunk;
+      remaining -= chunk;
+    }
+    Serial.write(0xFF);
+    Serial.flush();
+  }
+  else
+  {
+    Serial.write(0xEE);
+    Serial.write(0xFF);
+    Serial.flush();
   }
 }
