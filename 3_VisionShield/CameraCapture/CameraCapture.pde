@@ -15,7 +15,7 @@ Serial myPort;
 // must match resolution used in the sketch
 final int cameraWidth = 320;
 final int cameraHeight = 240;
-final int cameraBytesPerPixel = 1;
+final int cameraBytesPerPixel = 2; // Changed for RGB565 (2 bytes per pixel)
 final int cameraPixelCount = cameraWidth * cameraHeight;
 final int bytesPerFrame = cameraPixelCount * cameraBytesPerPixel;
 
@@ -27,32 +27,27 @@ boolean shouldRedraw = false;
 void setup() {
   size(640, 480);
 
-  // if you have only ONE serial port active
-  //myPort = new Serial(this, Serial.list()[0], 921600);          // if you have only ONE serial port active
-
-  // if you know the serial port name
-  //myPort = new Serial(this, "COM5", 921600);                    // Windows
-  //myPort = new Serial(this, "/dev/ttyACM0", 921600);            // Linux
-  myPort = new Serial(this, "/dev/cu.usbmodem1101", 921600);     // Mac
+  // Replace with your serial port
+  myPort = new Serial(this, "/dev/cu.usbmodem101", 921600);     // Mac
 
   // wait for full frame of bytes
-  myPort.buffer(bytesPerFrame);  
+  myPort.buffer(bytesPerFrame);
 
-  myImage = createImage(cameraWidth, cameraHeight, ALPHA);
-  
+  myImage = createImage(cameraWidth, cameraHeight, RGB); // Changed to RGB
+
   // Let the Arduino sketch know we're ready to receive data
   myPort.write(1);
 }
 
 void draw() {
   // Time out after 1.5 seconds and ask for new data
-  if(millis() - lastUpdate > 1500) {
+  if (millis() - lastUpdate > 1500) {
     println("Connection timed out.");
     myPort.clear();
     myPort.write(1);
   }
-  
-  if(shouldRedraw){    
+
+  if (shouldRedraw) {
     PImage img = myImage.copy();
     img.resize(640, 480);
     image(img, 0, 0);
@@ -62,35 +57,41 @@ void draw() {
 
 void serialEvent(Serial myPort) {
   lastUpdate = millis();
-  
+
   // read the received bytes
   myPort.readBytes(frameBuffer);
 
-  // Access raw bytes via byte buffer  
+  // Access raw bytes via byte buffer
   ByteBuffer bb = ByteBuffer.wrap(frameBuffer);
-  
-  /* 
-    Ensure proper endianness of the data for > 8 bit values.
-    When using > 8bit values uncomment the following line and
-    adjust the translation to the pixel color. 
-  */     
-  //bb.order(ByteOrder.BIG_ENDIAN);
+
+  // Ensure proper endianness of the data for 16-bit values
+  bb.order(ByteOrder.LITTLE_ENDIAN); // Assuming little-endian from Arduino (check datasheet)
 
   int i = 0;
 
   while (bb.hasRemaining()) {
-    // read 8-bit pixel
-    byte pixelValue = bb.get();
+    // read 16-bit pixel (RGB565)
+    short pixelValue = bb.getShort();
 
-    // set pixel color
-    myImage.pixels[i++] = color(Byte.toUnsignedInt(pixelValue));    
+    // Extract RGB components from RGB565
+    int r = (pixelValue >> 11) & 0x1F;
+    int g = (pixelValue >> 5) & 0x3F;
+    int b = pixelValue & 0x1F;
+
+    // Convert 5-bit and 6-bit components to 8-bit
+    r = (r << 3) | (r >> 2); // Scale 5-bit to 8-bit
+    g = (g << 2) | (g >> 4); // Scale 6-bit to 8-bit
+    b = (b << 3) | (b >> 2); // Scale 5-bit to 8-bit
+    
+    // set pixel color in PImage
+    myImage.pixels[i++] = color(r, g, b);
   }
-  
+
   myImage.updatePixels();
-  
+
   // Ensures that the new image data is drawn in the next draw loop
   shouldRedraw = true;
-  
+
   // Let the Arduino sketch know we received all pixels
   // and are ready for the next frame
   myPort.write(1);
